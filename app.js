@@ -22,6 +22,19 @@ let g = bigInt(("3FB32C9B 73134D0B 2E775066 60EDBD48 4CA7B18F 21EF2054" +
   "184B523D 1DB246C3 2F630784 90F00EF8 D647D148 D4795451" +
   "5E2327CF EF98C582 664B4C0F 6CC41659").replace(/[^a-zA-Z0-9]/g, ''), 16);
 
+let timers = {};
+
+function startTimer(name) {
+  timers[name] = new Date().getTime();
+}
+
+function stopTimer(name) {
+  if (console) {
+    console.log('timer ' + name + ' ' + (new Date().getTime() - timers[name]) + 'ms');
+  }
+  delete timers[name];
+}
+
 function int8toBigInt(array) {
   return bigInt(int8toHex(array));
 }
@@ -48,7 +61,7 @@ function bigIntToInt8(bigint) {
 
   let array = new Uint8Array(str.length / 2);
   for (let i = 0; i < array.length; i++) {
-    array[i] = parseInt(str.substr(i * 2, 2));
+    array[i] = parseInt(str.substr(i * 2, 2), 16);
   }
 
   return array;
@@ -65,9 +78,13 @@ function sha256(int8Array) {
 }
 
 function generatePhase1() {
+  startTimer('phase1Random');
   let id = int8toHex(generateRandom(128));
   let secret = int8toHex(generateRandom(2048));
+  stopTimer('phase1Random');
+  startTimer('phase1Secret');
   let code = g.modPow(bigInt(secret, 16), p);
+  stopTimer('phase1Secret');
 
   try {
     localStorage.setItem(id, secret);
@@ -86,8 +103,12 @@ function generatePhase1() {
 function generatePhase2(phase1) {
   let secret = int8toHex(generateRandom(2048));
   let secretInt = bigInt(secret, 16);
+  startTimer('phase2code');
   let code = g.modPow(secretInt, p);
+  stopTimer('phase2code');
+  startTimer('phase2key');
   let key = bigInt(phase1.code, 16).modPow(secretInt, p);
+  stopTimer('phase2key');
 
   return {
     phase: 3,
@@ -105,7 +126,9 @@ function generatePhase3(phase2) {
   }
 
   localStorage.removeItem(phase2.id);
+  startTimer('phase3');
   let key = bigInt(phase2.code, 16).modPow(bigInt(secret, 16), p);
+  stopTimer('phase3');
   return {key};
 }
 
