@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+
+    <script src="lib/BigInteger.js"></script>
+    <script src="app.js"></script>
+    <title>keypass</title>
+  </head>
+  <body>
+    <div class="container">
+      <div class="text-center">
+        <h1>keypass</h1>
+      </div>
+      <div class="row">
+        <div class="col-md-12">
+          <div class="p-3 card d-none" id="phase1">
+            <div class="card-body">
+              <h2>Step 1 of 3</h2>
+              <p>Send this link to the person you want to generate a password with:</p>
+              <a class="url" herf=""></a>
+            </div>
+          </div>
+          <div class="p-3 card d-none" id="phase2">
+            <div class="card-body">
+              <h2>Step 2 of 3</h2>
+              <p>Your new password is:</p>
+              <p class="key"></p>
+              <p>Send this link to the person you want to generate a password with:</p>
+              <a class="url" herf=""></a>
+            </div>
+          </div>
+          <div class="p-3 card d-none" id="phase3">
+            <div class="card-body">
+              <h2>Step 3 of 3</h2>
+              <p>Your new password is:</p>
+              <p class="key"></p>
+            </div>
+          </div>
+          <div class="p-3 card d-none bg-warning" id="error">
+            <div class="card-body">
+              <h2>Error</h2>
+              <p>An error has occurred.</p>
+              <p><strong id="errorText"></strong></p>
+              <p>Please click 'Start Over' below.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-md-2"></div>
+        <div class="col-md-8">
+          <div class="p-3 bg-light rounded">
+            <p>
+              This page allows you to securely generate a shared password with another person. This is a three step
+              process. In the first two steps, one person generates a link and shares it with the other person. At the
+              end, each of you will have a password that only the two of you know. The password cannot be determined by
+              reading the data encoded in the link URLs. You may share them by any mechanism you wish. You could post
+              them publically on Facebook and it would still be guaranteed that only the two people who originally
+              participated could determine what the generated password was.
+            </p>
+            <p>
+              This page uses <a href="https://en.wikipedia.org/wiki/Diffie–Hellman_key_exchange">Diffie-Hellman key
+              exchange</a> and executes entirely in the browser. DH is performed in 3 steps. In step 1, a random number
+              is generated, which is to be kept secret on machine A. This number is kept in DOM Local Storage, with an
+              id. A link is generated on machine A, which includes the generated id (but not the secret number). In
+              step 2, the link is opened on machine B. At this point, the password can be calculated, and it is
+              displayed on machine B. A link is also generated, which is to be opened on machine A. The link contains the
+              id, and the DH value from machine B (not the password, or machine B's secret). Machine A retrieves its
+              secret from local storage and uses it to compute the new password. The secret is then deleted from local
+              storage.
+            </p>
+            <a id="startOverButton" href="#" class="btn btn-primary disabled" onclick="location.hash = '#'; location.reload();">Start Over</a>
+            <a id="resetButton" href="#" class="btn btn-danger disabled" onclick="reset();">Clear Local Data</a>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </body>
+  </html>
