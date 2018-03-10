@@ -22,22 +22,141 @@ let g = bigInt(("3FB32C9B 73134D0B 2E775066 60EDBD48 4CA7B18F 21EF2054" +
   "184B523D 1DB246C3 2F630784 90F00EF8 D647D148 D4795451" +
   "5E2327CF EF98C582 664B4C0F 6CC41659").replace(/[^a-zA-Z0-9]/g, ''), 16);
 
-let timers = {};
+let Dispatcher = {
+  operations: ['modPow'],
+  calls: {},
+  callId: 0,
+  init: function() {
+    this.workers = [{worker: new Worker('worker.js'), count: 0}, {worker: new Worker('worker.js'), count: 0}];
 
-function startTimer(name) {
-  timers[name] = new Date().getTime();
-}
+    let dispatcher = this;
 
-function stopTimer(name) {
-  if (console) {
-    console.log('timer ' + name + ' ' + (new Date().getTime() - timers[name]) + 'ms');
+    function receive(event) {
+      let data = event.data;
+      let call = dispatcher.calls[data.id];
+      call.worker.count--;
+      call.resolve(data.returnValue);
+    }
+
+    for (let worker of this.workers) {
+      worker.worker.onmessage = receive;
+    }
+
+    for (let operation of this.operations) {
+      this[operation] = function(params) {
+        return dispatcher.dispatch({
+          op: operation,
+          parameters: params
+        })
+      }
+    }
+  },
+  dispatch: function(event) {
+    let worker = this.workers[1].count < this.workers[0].count ? this.workers[1] : this.workers[0];
+    event.id = this.callId++;
+    worker.worker.postMessage(event);
+
+    let call = {worker: worker};
+    this.calls[event.id] = call;
+    return new Promise((resolve, reject)=>{
+      call.resolve = resolve;
+      call.reject = reject;
+    });
+  },
+};
+
+Dispatcher.init();
+
+let base64 = {
+  encode : function(buf) {
+    let rv = '';
+    buf = new Uint8Array(buf);
+    let i = 0;
+
+    for (; i < buf.length - 2; i += 3) {
+      let a = buf[i] >> 2; // top 6 bits
+      let b = (buf[i] << 4 | buf[i + 1] >> 4) & 63; // bottom 2 bits + top 4 bits
+      let c = (buf[i + 1] << 2 | buf[i + 2] >> 6) & 63;
+      let d = buf[i + 2] & 63;
+
+      rv += base64.chs[a] + base64.chs[b] + base64.chs[c] + base64.chs[d];
+    }
+
+    if (i == buf.length - 2) {
+      let a = buf[i] >> 2; // top 6 bits
+      let b = (buf[i] << 4 | buf[i + 1] >> 4) & 63; // bottom 2 bits + top 4 bits
+      let c = (buf[i + 1] << 2) & 63;
+      rv += base64.chs[a] + base64.chs[b] + base64.chs[c];
+    } else if (i == buf.length - 1) {
+      let a = buf[i] >> 2; // top 6 bits
+      let b = (buf[i] << 4) & 63; // bottom 2 bits + top 4 bits
+      rv += base64.chs[a] + base64.chs[b];
+    }
+
+    return rv;
+  },
+  decode: function(str) {
+    let bytes = Math.floor(str.length * .75);
+
+    let arr = new Uint8Array(bytes);
+
+    let i = 0;
+    let z = 0;
+
+    for (; i < str.length - 3; i += 4) {
+      let chunk = base64.rev[str.charCodeAt(i)] << 18 |
+                  base64.rev[str.charCodeAt(i + 1)] << 12 |
+                  base64.rev[str.charCodeAt(i + 2)] << 6 |
+                  base64.rev[str.charCodeAt(i + 3)];
+
+      let a = base64.rev[str.charCodeAt(i)];
+      let b = base64.rev[str.charCodeAt(i + 1)];
+      let c = base64.rev[str.charCodeAt(i + 2)];
+      let d = base64.rev[str.charCodeAt(i + 3)];
+
+      arr[z++] = chunk >> 16;
+      arr[z++] = chunk >> 8 & 0xFF;
+      arr[z++] = chunk & 0xFF;
+    }
+
+    if (i == str.length - 2) {
+      let chunk = base64.rev[str.charCodeAt(i)] << 2 |
+                  base64.rev[str.charCodeAt(i + 1)] >> 4;
+      arr[z++] = chunk & 0xFF;
+    } else if (i == str.length - 3) {
+      let chunk = base64.rev[str.charCodeAt(i)] << 10 |
+                  base64.rev[str.charCodeAt(i + 1)] << 4 |
+                  base64.rev[str.charCodeAt(i + 1)] >> 2;
+      arr[z++] = chunk >> 8;
+      arr[z++] = chunk & 0xFF;
+    }
+
+    if (i < str.length) {
+      let a = base64.rev[str.charCodeAt(i)];
+      let b = base64.rev[str.charCodeAt(i + 1)];
+      arr[z++] = a << 2 | b >> 6;
+
+      if (i < str.length - 2) {
+        let c = base64.rev[str.charCodeAt(i + 2)];
+        arr[z++] = b << 4 | c >> 2;
+      }
+    }
+
+    return arr;
   }
-  delete timers[name];
-}
+};
 
-function int8toBigInt(array) {
-  return bigInt(int8toHex(array));
-}
+(function() {
+  let chs = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  base64.chs = chs;
+  let rev = [];
+
+  for (let i = 0; i < chs.length; i++) {
+    rev[chs.charCodeAt(i)] = i;
+  }
+
+  base64.rev = rev;
+})();
 
 function int8toHex(array) {
   let str = '';
@@ -53,20 +172,6 @@ function int8toHex(array) {
   return str;
 }
 
-function bigIntToInt8(bigint) {
-  let str = bigint.toString(16);
-  if (str.length % 2 == 1) {
-    str = '0' + str;
-  }
-
-  let array = new Uint8Array(str.length / 2);
-  for (let i = 0; i < array.length; i++) {
-    array[i] = parseInt(str.substr(i * 2, 2), 16);
-  }
-
-  return array;
-}
-
 function generateRandom(bits) {
   let array = new Uint8Array(bits / 8);
   window.crypto.getRandomValues(array);
@@ -77,48 +182,54 @@ function sha256(int8Array) {
   return window.crypto.subtle.digest('SHA-256', int8Array).then(hash=>int8toHex(new Uint8Array(hash)))
 }
 
+function parseHex(hex) {
+  return bigInt(hex, 16);
+}
+
+function modPow(a, pow, mod) {
+  return Dispatcher.modPow({a, pow, mod}).then(rv=>{
+    bigInt.adopt(rv);
+    return rv;
+  });
+}
+
 function generatePhase1() {
-  startTimer('phase1Random');
-  let id = int8toHex(generateRandom(128));
-  let secret = int8toHex(generateRandom(2048));
-  stopTimer('phase1Random');
-  startTimer('phase1Secret');
-  let code = g.modPow(bigInt(secret, 16), p);
-  stopTimer('phase1Secret');
+  let id = base64.encode(bigInt(parseInt(Date.now() / 1000)).toBuffer())
+  let secret = generateRandom(2048);
+  let secretStr = base64.encode(secret);
 
   try {
-    localStorage.setItem(id, secret);
+    localStorage.setItem(id, secretStr);
   } catch (e) {
     throw 'Unable to store to local storage';
   }
 
-  return {
-    phase: 2,
-    id: id,
-    secret: secret,
-    code: code.toString(16)
-  };
+  return modPow(g, bigInt.fromBuffer(secret), p).then((code)=>{
+    return {
+      phase: 2,
+      id: id,
+      code: base64.encode(code.toBuffer())
+    };
+  });
 }
 
-function generatePhase2(phase1) {
-  let secret = int8toHex(generateRandom(2048));
-  let secretInt = bigInt(secret, 16);
-  startTimer('phase2code');
-  let code = g.modPow(secretInt, p);
-  stopTimer('phase2code');
-  startTimer('phase2key');
-  let key = bigInt(phase1.code, 16).modPow(secretInt, p);
-  stopTimer('phase2key');
-
-  return {
-    phase: 3,
-    id: phase1.id,
-    key: key,
-    code: code.toString(16)
-  };
+function generatePhase2Key(state) {
+  let secret = bigInt.fromBuffer(generateRandom(2048));
+  state.secret = secret;
+  return modPow(bigInt.fromBuffer(base64.decode(state.code)), secret, p);
 }
 
-function generatePhase3(phase2) {
+function generatePhase2Code(state) {
+  return modPow(g, state.secret, p).then((code)=>{
+    return {
+      phase: 3,
+      id: state.id,
+      code : base64.encode(code.toBuffer())
+    }
+  });
+}
+
+function generatePhase3Key(phase2) {
   let secret = localStorage.getItem(phase2.id);
 
   if (secret == null) {
@@ -126,10 +237,7 @@ function generatePhase3(phase2) {
   }
 
   localStorage.removeItem(phase2.id);
-  startTimer('phase3');
-  let key = bigInt(phase2.code, 16).modPow(bigInt(secret, 16), p);
-  stopTimer('phase3');
-  return {key};
+  return modPow(bigInt.fromBuffer(base64.decode(phase2.code)), bigInt.fromBuffer(base64.decode(secret)), p);
 }
 
 function buildURL(phase) {
@@ -199,24 +307,28 @@ function reload() {
 
   try {
     if (state.phase == 1) {
-      state = generatePhase1();
-      let url = buildURL(state);
-      urlEl.setAttribute('href', url);
-      urlEl.innerText = url;
+      generatePhase1().then(state=>{
+        let url = buildURL(state);
+        urlEl.setAttribute('href', url);
+        urlEl.innerText = url;
+      });
     } else if (state.phase == 2) {
-      state = generatePhase2(state);
-      let url = buildURL(state);
-      urlEl.setAttribute('href', url);
-      urlEl.innerText = url;
+      generatePhase2Key(state).then(key=>sha256(key.toBuffer())).then(sha=>keyEl.innerText = sha);
 
-      sha256(bigIntToInt8(state.key)).then(sha=>keyEl.innerText = sha);
+      generatePhase2Code(state).then(phase2=>{
+        let url = buildURL(phase2);
+        urlEl.setAttribute('href', url);
+        urlEl.innerText = url;
+      });
     } else if (state.phase == 3) {
-      state = generatePhase3(state);
-      sha256(bigIntToInt8(state.key)).then(sha=>{keyEl.innerText = sha});
+      generatePhase3Key(state).then(key=>sha256(key.toBuffer())).then(sha=>keyEl.innerText = sha);
     }
 
     card.classList.remove('d-none');
   } catch (e) {
+    if (console) {
+      console.error(e);
+    }
     document.getElementById('errorText').innerText = e.toString();
     document.getElementById('error').classList.remove('d-none');
   }
