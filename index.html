@@ -4,11 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
+    <link rel="stylesheet" href="fontawesome/fa-svg-with-js.css"/>
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
     <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
-
+    <script src="fontawesome/fontawesome-all.js"></script>
     <script src="lib/BigInteger.js"></script>
     <script src="app.js"></script>
 
@@ -28,23 +29,23 @@
             <div class="card-body">
               <h2>Step 1 of 3</h2>
               <p>Send this link to the person you want to generate a password with:</p>
-              <a class="url" herf=""></a>
+              <a class="url" herf=""><i class="fas fa-circle-notch fa-spin"></i></a>
             </div>
           </div>
           <div class="p-3 card d-none" id="phase2">
             <div class="card-body">
               <h2>Step 2 of 3</h2>
               <p>Your new password is:</p>
-              <p class="key"></p>
+              <p class="key"><i class="fas fa-circle-notch fa-spin"></i></p>
               <p>Send this link to the person you want to generate a password with:</p>
-              <a class="url" herf=""></a>
+              <a class="url" herf=""><i class="fas fa-circle-notch fa-spin"></i></a>
             </div>
           </div>
           <div class="p-3 card d-none" id="phase3">
             <div class="card-body">
               <h2>Step 3 of 3</h2>
               <p>Your new password is:</p>
-              <p class="key"></p>
+              <p class="key"><i class="fas fa-circle-notch fa-spin"></i></p>
             </div>
           </div>
           <div class="p-3 card d-none bg-warning" id="error">
@@ -80,7 +81,7 @@
               secret from local storage and uses it to compute the new password. The secret is then deleted from local
               storage.
             </p>
-            <p><a href="https://github.com/amadigan/sendkey">View the source on GitHub</a></p>
+            <p><a href="https://github.com/amadigan/sendkey">View the source on <i class="fab fa-2x fa-github"></i> GitHub</a></p>
             <a id="startOverButton" href="#" class="btn btn-primary disabled" onclick="location.hash = '#'; location.reload();">Start Over</a>
             <a id="resetButton" href="#" class="btn btn-danger disabled" onclick="reset();">Clear Local Data</a>
           </div>
