@@ -244,10 +244,21 @@ function copyBox(prefix, value, onReveal) {
 
   function clickCopy(e) {
     e.preventDefault();
-    copyText.select();
+    let range = document.createRange();
+    copyText.contenteditable = true;
+    copyText.readonly = false;
+    range.selectNodeContents(copyText);
+
+    let selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    copyText.setSelectionRange(0, 999999);
     document.execCommand('copy');
-    window.getSelection().removeAllRanges();
+    selection.removeAllRanges();
     copyLabel.innerText = 'Copied!';
+    copyText.contenteditable = false;
+    copyText.readonly = true;
     setTimeout(()=>{
       if (copyLabel.innerText == 'Copied!') {
         copyLabel.innerText = 'Copy to Clipboard';}
