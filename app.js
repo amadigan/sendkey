@@ -1,3 +1,5 @@
+// RFC 5114 (Additional Diffie-Hellman Groups for Use with IETF Standards)
+// Section 2.3 (2048-bit MODP Group with 256-bit Prime Order Subgroup)
 let p = bigInt(("87A8E61D B4B6663C FFBBD19C 65195999 8CEEF608 660DD0F2" +
   "5D2CEED4 435E3B00 E00DF8F1 D61957D4 FAF7DF45 61B2AA30" +
   "16C3D911 34096FAA 3BF4296D 830E9A7C 209E0C64 97517ABD" +
@@ -67,123 +69,14 @@ let Dispatcher = {
 
 Dispatcher.init();
 
-let base64 = {
-  encode : function(buf) {
-    let rv = '';
-    buf = new Uint8Array(buf);
-    let i = 0;
-
-    for (; i < buf.length - 2; i += 3) {
-      let a = buf[i] >> 2; // top 6 bits
-      let b = (buf[i] << 4 | buf[i + 1] >> 4) & 63; // bottom 2 bits + top 4 bits
-      let c = (buf[i + 1] << 2 | buf[i + 2] >> 6) & 63;
-      let d = buf[i + 2] & 63;
-
-      rv += base64.chs[a] + base64.chs[b] + base64.chs[c] + base64.chs[d];
-    }
-
-    if (i == buf.length - 2) {
-      let a = buf[i] >> 2; // top 6 bits
-      let b = (buf[i] << 4 | buf[i + 1] >> 4) & 63; // bottom 2 bits + top 4 bits
-      let c = (buf[i + 1] << 2) & 63;
-      rv += base64.chs[a] + base64.chs[b] + base64.chs[c];
-    } else if (i == buf.length - 1) {
-      let a = buf[i] >> 2; // top 6 bits
-      let b = (buf[i] << 4) & 63; // bottom 2 bits + top 4 bits
-      rv += base64.chs[a] + base64.chs[b];
-    }
-
-    return rv;
-  },
-  decode: function(str) {
-    let bytes = Math.floor(str.length * .75);
-
-    let arr = new Uint8Array(bytes);
-
-    let i = 0;
-    let z = 0;
-
-    for (; i < str.length - 3; i += 4) {
-      let chunk = base64.rev[str.charCodeAt(i)] << 18 |
-                  base64.rev[str.charCodeAt(i + 1)] << 12 |
-                  base64.rev[str.charCodeAt(i + 2)] << 6 |
-                  base64.rev[str.charCodeAt(i + 3)];
-
-      let a = base64.rev[str.charCodeAt(i)];
-      let b = base64.rev[str.charCodeAt(i + 1)];
-      let c = base64.rev[str.charCodeAt(i + 2)];
-      let d = base64.rev[str.charCodeAt(i + 3)];
-
-      arr[z++] = chunk >> 16;
-      arr[z++] = chunk >> 8 & 0xFF;
-      arr[z++] = chunk & 0xFF;
-    }
-
-    if (i == str.length - 2) {
-      let chunk = base64.rev[str.charCodeAt(i)] << 2 |
-                  base64.rev[str.charCodeAt(i + 1)] >> 4;
-      arr[z++] = chunk & 0xFF;
-    } else if (i == str.length - 3) {
-      let chunk = base64.rev[str.charCodeAt(i)] << 10 |
-                  base64.rev[str.charCodeAt(i + 1)] << 4 |
-                  base64.rev[str.charCodeAt(i + 1)] >> 2;
-      arr[z++] = chunk >> 8;
-      arr[z++] = chunk & 0xFF;
-    }
-
-    if (i < str.length) {
-      let a = base64.rev[str.charCodeAt(i)];
-      let b = base64.rev[str.charCodeAt(i + 1)];
-      arr[z++] = a << 2 | b >> 6;
-
-      if (i < str.length - 2) {
-        let c = base64.rev[str.charCodeAt(i + 2)];
-        arr[z++] = b << 4 | c >> 2;
-      }
-    }
-
-    return arr;
-  }
-};
-
-(function() {
-  let chs = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  base64.chs = chs;
-  let rev = [];
-
-  for (let i = 0; i < chs.length; i++) {
-    rev[chs.charCodeAt(i)] = i;
-  }
-
-  base64.rev = rev;
-})();
-
-function int8toHex(array) {
-  let str = '';
-  for (let i = 0; i < array.length; i++) {
-    let hex = array[i].toString(16);
-    if (hex.length == 1) {
-      str = str + '0' + hex;
-    } else {
-      str = str + hex;
-    }
-  }
-
-  return str;
-}
-
 function generateRandom(bits) {
-  let array = new Uint8Array(bits / 8);
+  let array = new Uint8Array(bits >> 3);
   window.crypto.getRandomValues(array);
   return array;
 }
 
 function sha256(int8Array) {
-  return window.crypto.subtle.digest('SHA-256', int8Array).then(hash=>int8toHex(new Uint8Array(hash)))
-}
-
-function parseHex(hex) {
-  return bigInt(hex, 16);
+  return window.crypto.subtle.digest('SHA-256', int8Array);
 }
 
 function modPow(a, pow, mod) {
@@ -194,9 +87,9 @@ function modPow(a, pow, mod) {
 }
 
 function generatePhase1() {
-  let id = base64.encode(bigInt(parseInt(Date.now() / 1000)).toBuffer())
+  let id = Codec.base64.decodeBytes(bigInt(parseInt(Date.now() / 1000)).toBuffer());
   let secret = generateRandom(2048);
-  let secretStr = base64.encode(secret);
+  let secretStr = Codec.base64.decodeBytes(secret);
 
   try {
     localStorage.setItem(id, secretStr);
@@ -208,7 +101,7 @@ function generatePhase1() {
     return {
       phase: 2,
       id: id,
-      code: base64.encode(code.toBuffer())
+      code: Codec.base64.decodeBytes(code.toBuffer())
     };
   });
 }
@@ -216,7 +109,7 @@ function generatePhase1() {
 function generatePhase2Key(state) {
   let secret = bigInt.fromBuffer(generateRandom(2048));
   state.secret = secret;
-  return modPow(bigInt.fromBuffer(base64.decode(state.code)), secret, p);
+  return modPow(bigInt.fromBuffer(Codec.base64.encodeString(state.code)), secret, p);
 }
 
 function generatePhase2Code(state) {
@@ -224,7 +117,8 @@ function generatePhase2Code(state) {
     return {
       phase: 3,
       id: state.id,
-      code : base64.encode(code.toBuffer())
+      code : Codec.base64.decodeBytes(code.toBuffer()),
+      encoding: state.encoding
     }
   });
 }
@@ -237,7 +131,10 @@ function generatePhase3Key(phase2) {
   }
 
   localStorage.removeItem(phase2.id);
-  return modPow(bigInt.fromBuffer(base64.decode(phase2.code)), bigInt.fromBuffer(base64.decode(secret)), p);
+  return modPow(
+          bigInt.fromBuffer(Codec.base64.encodeString(phase2.code)),
+          bigInt.fromBuffer(Codec.base64.encodeString(secret)),
+          p);
 }
 
 function buildURL(phase) {
@@ -248,13 +145,20 @@ function buildURL(phase) {
     base = base.substr(0, hashPos);
   }
 
-  return base + '#p' + phase.phase + '_i' + phase.id + '_c' + phase.code;
+  let url = base + '#p' + phase.phase + '_i' + phase.id + '_c' + phase.code;
+
+  if (phase.encoding) {
+    url += '_e' + phase.encoding;
+  }
+
+  return url;
 }
 
 let KEY_MAP = {
   p: 'phase',
   i: 'id',
-  c: 'code'
+  c: 'code',
+  e: 'encoding'
 }
 
 function parseHash() {
@@ -287,6 +191,101 @@ function reset() {
   location.reload();
 }
 
+function copyBox(prefix, value, onReveal) {
+  function el(selector) {
+    return document.querySelector(prefix + ' ' + selector);
+  }
+  let copyText = el('.copy-text');
+  let reveal = el('.reveal');
+  let charcount = el('.reveal .charcount');
+  let covered = el('.covered');
+  let cover = el('.cover');
+  let copyButton = el('.copy-button');
+  let copyLabel = el('.copy-button .copy-label');
+
+
+  copyText.value = value;
+  charcount.innerText = value.length;
+  covered.classList.remove('d-none');
+
+  function clickReveal() {
+    copyText.style.height = copyText.scrollHeight + 'px';
+    cover.classList.add('d-none');
+    if (onReveal) {
+      onReveal(prefix);
+    }
+  }
+
+  reveal.addEventListener('click', clickReveal);
+
+  cover.style.height = copyText.clientHeight + 1 + 'px';
+  cover.style.width = copyText.clientWidth + 'px';
+
+  if (copyText.style.scrollHeight < covered.clientHeight) {
+    covered.style.height = covered.clientHeight + 'px';
+  }
+
+
+  if (copyButton.tagName == 'A') {
+    copyButton.href = value;
+    copyButton.classList.remove('disabled');
+  } else {
+    copyButton.removeAttribute('disabled');
+  }
+
+  copyButton.classList.remove('btn-outline-success');
+  copyButton.classList.add('btn-success');
+
+  let copyIcon = el('.copy-button [data-fa-i2svg]');
+  copyIcon.classList.remove('fa-spin', 'fa-circle-notch');
+  copyIcon.classList.add('fa-clone');
+  copyLabel.innerText = 'Copy to Clipboard';
+  copyButton.style.width = copyButton.clientWidth + 'px';
+
+  function clickCopy(e) {
+    e.preventDefault();
+    copyText.select();
+    document.execCommand('copy');
+    window.getSelection().removeAllRanges();
+    copyLabel.innerText = 'Copied!';
+    setTimeout(()=>{
+      if (copyLabel.innerText == 'Copied!') {
+        copyLabel.innerText = 'Copy to Clipboard';}
+      }, 2000);
+    return false;
+  }
+
+  copyButton.addEventListener('click', clickCopy);
+
+  return {
+    reset: function() {
+      let copyIcon = el('.copy-button [data-fa-i2svg]');
+      covered.classList.add('d-none');
+      cover.classList.remove('d-none');
+      reveal.removeEventListener('click', clickReveal);
+      copyButton.removeEventListener('click', clickCopy);
+      if (copyButton.tagName == 'A') {
+        copyButton.href = '';
+        copyButton.classList.add('disabled');
+      } else {
+        copyButton.setAttribute('disabled', 'disabled');
+      }
+      copyButton.classList.add('btn-outline-success');
+      copyButton.classList.remove('btn-success');
+      copyIcon.classList.remove('fa-clone');
+      copyIcon.classList.add('fa-spin', 'fa-circle-notch');
+      copyLabel.innerText = 'Working...';
+    },
+    update: function(value) {
+      copyText.value = value;
+      if (copyButton.tagName == 'A') {
+        copyButton.href = value;
+      }
+      charcount.innerText = value.length;
+    }
+  }
+}
+
 function reload() {
   let state = parseHash();
 
@@ -301,27 +300,104 @@ function reload() {
   let prefix = '#phase' + state.phase;
   let card = document.querySelector(prefix);
 
-  let urlEl = document.querySelector(prefix + ' a.url');
+  function el(selector) {
+    return document.querySelector(prefix + ' ' + selector);
+  }
+
+  let urlEl = document.querySelector(prefix + ' .url');
   let keyEl = document.querySelector(prefix + ' p.key');
 
 
   try {
     if (state.phase == 1) {
       generatePhase1().then(state=>{
-        let url = buildURL(state);
-        urlEl.setAttribute('href', url);
-        urlEl.innerText = url;
+        copyBox(prefix, buildURL(state));
       });
     } else if (state.phase == 2) {
-      generatePhase2Key(state).then(key=>sha256(key.toBuffer())).then(sha=>keyEl.innerText = sha);
+      let keyBox;
+      let urlBox;
 
-      generatePhase2Code(state).then(phase2=>{
-        let url = buildURL(phase2);
-        urlEl.setAttribute('href', url);
-        urlEl.innerText = url;
+      if (!state.encoding) {
+        state.encoding = Codec.password.name;
+      }
+
+      function setEncoding(encoding) {
+        document.querySelectorAll(prefix + ' .encoding-dropdown .dropdown-item').forEach(item=>{
+          if (encoding == item.getAttribute('data-encoding')) {
+            item.classList.add('d-none');
+            el('.encoding-label').innerText = item.innerText;
+          } else {
+            item.classList.remove('d-none');
+          }
+        })
+
+        state.encoding = encoding;
+        if (urlBox) {
+          urlBox.update(buildURL(state));
+        }
+
+        keyBox.update(Codec.byName[state.encoding].decodeBytes(state.sha));
+      }
+
+      document.querySelectorAll(prefix + ' .encoding-dropdown .dropdown-item').forEach(item=>{
+        if (item.getAttribute('data-encoding') == state.encoding) {
+          item.classList.add('d-none');
+        }
+        item.addEventListener('click', (e)=>{
+          e.preventDefault();
+          setEncoding(item.getAttribute('data-encoding'));
+        })
       });
+
+      function regenerate() {
+        let cancelled = false;
+
+        generatePhase2Key(state)
+          .then(key=>sha256(key.toBuffer()))
+          .then(sha=>{
+            state.sha = sha;
+            el('.encoding-dropdown').classList.remove('d-none');
+            let key = Codec.byName[state.encoding].decodeBytes(sha);
+
+            el('.regenerate').removeAttribute('disabled');
+            keyBox = copyBox(prefix + ' .key-box', key, function() {
+              el('.regenerate').classList.remove('d-none');
+
+              function clickRegenerate() {
+                cancelled = true;
+                keyBox.reset();
+                if (urlBox) {
+                  urlBox.reset();
+                }
+
+                el('.regenerate').setAttribute('disabled', 'disabled');
+
+                regenerate();
+              }
+
+              el('.regenerate').addEventListener('click', clickRegenerate);
+            });
+          });
+
+        generatePhase2Code(state).then(phase2=>{
+          if (!cancelled) {
+            phase2.encoding = state.encoding;
+            phase2.sha = state.sha;
+            state = phase2;
+            urlBox = copyBox(prefix + ' .url-box', buildURL(phase2));
+          }
+        });
+      }
+
+      regenerate();
     } else if (state.phase == 3) {
-      generatePhase3Key(state).then(key=>sha256(key.toBuffer())).then(sha=>keyEl.innerText = sha);
+      generatePhase3Key(state)
+        .then(key=>sha256(key.toBuffer()))
+        .then(sha=>{
+          let key = Codec.byName[state.encoding].decodeBytes(sha);
+
+          copyBox(prefix, key)
+        });
     }
 
     card.classList.remove('d-none');
@@ -335,3 +411,4 @@ function reload() {
 }
 
 window.onload = reload;
+window.onhashchange = ()=>{window.location.reload();};

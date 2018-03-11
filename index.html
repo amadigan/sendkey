@@ -11,17 +11,20 @@
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
     <script src="fontawesome/fontawesome-all.js"></script>
     <script src="lib/BigInteger.js"></script>
+    <!-- <script src="lib/pako.js"></script> -->
+    <script src="codec.js"></script>
     <script src="app.js"></script>
 
     <style>
     a.url {word-break: break-all;}
+    textarea {overflow: hidden;}
     </style>
     <title>sendkey</title>
   </head>
   <body>
     <div class="container">
       <div class="text-center">
-        <h1>sendkey</h1>
+        <h1><i class="fas fa-magic"></i><i class="fas fa-key"></i> sendkey</h1>
       </div>
       <div class="row">
         <div class="col-md-12">
@@ -29,23 +32,62 @@
             <div class="card-body">
               <h2>Step 1 of 3</h2>
               <p>Send this link to the person you want to generate a password with:</p>
-              <a class="url" herf=""><i class="fas fa-circle-notch fa-spin"></i></a>
+              <a href="" class="text-left btn btn-outline-success disabled copy-button"><i class="fas fa-circle-notch fa-spin"></i> <span class="copy-label">Working...</span></a>
+              <div class="mt-1 d-none covered">
+                <div class="cover form-control" style="position: absolute; z-index: 2; background-color: rgba(238, 238, 238, 0.9);">
+                  <button type="button" style="z-index: 3; margin: auto;" class="mx-auto d-block btn btn-info reveal"><i class="fas fa-eye"></i> Reveal (<span class="charcount"></span> characters)</button>
+                </div>
+                <textarea disabled style="resize: none" class="hide form-control copy-text"></textarea>
+              </div>
             </div>
           </div>
           <div class="p-3 card d-none" id="phase2">
             <div class="card-body">
               <h2>Step 2 of 3</h2>
-              <p>Your new password is:</p>
-              <p class="key"><i class="fas fa-circle-notch fa-spin"></i></p>
-              <p>Send this link to the person you want to generate a password with:</p>
-              <a class="url" herf=""><i class="fas fa-circle-notch fa-spin"></i></a>
+              <p>Your new password:</p>
+              <div class="key-box">
+                <button disabled class="text-left btn btn-outline-success copy-button"><i class="fas fa-circle-notch fa-spin"></i> <span class="copy-label">Working...</span></button>
+                <span class="dropdown encoding-dropdown d-none">
+                  <button class="text-left btn btn-outline-secondary dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    <i class="fas fa-keyboard"></i> <span style="display: inline-block; width: 7em;" class="encoding-label">password</span>
+                  </button>
+                  <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                    <a class="dropdown-item" data-encoding="B" href="">base64</a>
+                    <a class="dropdown-item" data-encoding="x" href="">hex</a>
+                    <a class="dropdown-item" data-encoding="p" href="">password</a>
+                  </div>
+                </span>
+                <button class="d-none btn btn-secondary regenerate"><i class="fas fa-sync"></i> Regenerate</button>
+                <div class="mt-1 d-none covered">
+                  <div class="cover form-control" style="position: absolute; z-index: 2; background-color: rgba(238, 238, 238, 0.9);">
+                    <button type="button" style="z-index: 3; margin: auto;" class="mx-auto d-block btn btn-info reveal"><i class="fas fa-eye"></i> Reveal (<span class="charcount"></span> characters)</button>
+                  </div>
+                  <textarea disabled style="resize: none" class="text-dark bg-light hide form-control copy-text"></textarea>
+                </div>
+              </div>
+              <p class="mt-2">Send this link back so the sender can see the password:</p>
+              <div class="url-box">
+                <a href="" class="text-left btn btn-outline-success disabled copy-button"><i class="fas fa-circle-notch fa-spin"></i> <span class="copy-label">Working...</span></a>
+                <div class="mt-1 d-none covered">
+                  <div class="cover form-control" style="position: absolute; z-index: 2; background-color: rgba(238, 238, 238, 0.9);">
+                    <button type="button" style="z-index: 3; margin: auto;" class="mx-auto d-block btn btn-info reveal"><i class="fas fa-eye"></i> Reveal (<span class="charcount"></span> characters)</button>
+                  </div>
+                  <textarea disabled style="resize: none" class="hide form-control copy-text"></textarea>
+                </div>
+              </div>
             </div>
           </div>
           <div class="p-3 card d-none" id="phase3">
             <div class="card-body">
               <h2>Step 3 of 3</h2>
-              <p>Your new password is:</p>
-              <p class="key"><i class="fas fa-circle-notch fa-spin"></i></p>
+              <p>Your new password:</p>
+              <button disabled class="text-left btn btn-outline-success copy-button"><i class="fas fa-circle-notch fa-spin"></i> <span class="copy-label">Working...</span></button>
+              <div class="mt-1 d-none covered">
+                <div class="cover form-control" style="position: absolute; z-index: 2; background-color: rgba(238, 238, 238, 0.9);">
+                  <button type="button" style="z-index: 3; margin: auto;" class="mx-auto d-block btn btn-info reveal"><i class="fas fa-eye"></i> Reveal (<span class="charcount"></span> characters)</button>
+                </div>
+                <textarea disabled style="resize: none" class="text-dark bg-light hide form-control copy-text"></textarea>
+              </div>
             </div>
           </div>
           <div class="p-3 card d-none bg-warning" id="error">
@@ -58,7 +100,7 @@
           </div>
         </div>
       </div>
-      <div class="row">
+      <div class="row mt-2">
         <div class="col-md-2"></div>
         <div class="col-md-8">
           <div class="p-3 bg-light rounded">
@@ -81,9 +123,9 @@
               secret from local storage and uses it to compute the new password. The secret is then deleted from local
               storage.
             </p>
-            <p><a href="https://github.com/amadigan/sendkey">View the source on <i class="fab fa-2x fa-github"></i> GitHub</a></p>
-            <a id="startOverButton" href="#" class="btn btn-primary disabled" onclick="location.hash = '#'; location.reload();">Start Over</a>
-            <a id="resetButton" href="#" class="btn btn-danger disabled" onclick="reset();">Clear Local Data</a>
+            <p><i class="fab fa-2x fa-github text-dark"></i> <a href="https://github.com/amadigan/sendkey">View the source on  GitHub</a></p>
+            <a id="startOverButton" href="#" class="btn btn-primary disabled"><i class="fas fa-home"></i> Start Over</a>
+            <a id="resetButton" href="#" class="btn btn-danger disabled" onclick="reset();"><i class="fas fa-bolt"></i> Clear Local Data</a>
           </div>
 
         </div>
