@@ -117,20 +117,9 @@ let base64 = {
     } else if (i == str.length - 3) {
       let chunk = base64.rev[str.charCodeAt(i)] << 10 |
                   base64.rev[str.charCodeAt(i + 1)] << 4 |
-                  base64.rev[str.charCodeAt(i + 1)] >> 2;
+                  base64.rev[str.charCodeAt(i + 2)] >> 2;
       arr[z++] = chunk >> 8;
       arr[z++] = chunk & 0xFF;
-    }
-
-    if (i < str.length) {
-      let a = base64.rev[str.charCodeAt(i)];
-      let b = base64.rev[str.charCodeAt(i + 1)];
-      arr[z++] = a << 2 | b >> 6;
-
-      if (i < str.length - 2) {
-        let c = base64.rev[str.charCodeAt(i + 2)];
-        arr[z++] = b << 4 | c >> 2;
-      }
     }
 
     return arr;
@@ -218,7 +207,7 @@ Codec.utf8 = {
     return new TextEncoder().encode(string);
   },
   decodeBytes: function(arr) {
-    return new TextDecoder('utf-8').decode(string);
+    return new TextDecoder('utf-8').decode(arr);
   },
   isEnabled: function() {
     if (typeof TextEncoder !== 'undefined' && typeof TextDecoder !== 'undefined') {
@@ -257,14 +246,18 @@ Codec.password = {
   }
 }
 
-let codecs = [Codec.hex, Codec.hexUpper, Codec.base64, Codec.base64Padded, Codec.utf8, Codec.ascii, Codec.utf16];
+let codecs = [Codec.hex, Codec.hexUpper, Codec.base64, Codec.base64Padded, Codec.utf8, Codec.ascii, Codec.utf16, Codec.deflate, Codec.password];
 
-Codec.byName = {p: Codec.password};
+Codec.byName = {};
 
 codecs.forEach(codec=>Codec.byName[codec.name] = codec);
 
-Codec.encodeString = function(string) {
-  let byteCoder = codecs.find(codec=>codec.isEnabled() && codec.canEncode(string));
+codecs = [Codec.utf8, Codec.ascii, Codec.utf16]
+
+Codec.encodeString = function(string, allowCodecs) {
+  let byteCoder = codecs.find(codec=>(!allowCodecs || allowCodecs.includes(code.name)) && codec.isEnabled()
+    && codec.canEncode(string));
+
   let buffer = byteCoder.encodeString(string);
   let encoding = byteCoder.name;
 
@@ -282,7 +275,8 @@ Codec.encodeString = function(string) {
 Codec.decodeBytes = function(buf, encoding) {
   let result = buf;
   for (let name of encoding) {
-    result = Codec.byName[name].decodeBytes(buf);
+    console.log('decoding with ' + name);
+    result = Codec.byName[name].decodeBytes(result);
   }
 
   return result;

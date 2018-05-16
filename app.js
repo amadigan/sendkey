@@ -1,6 +1,6 @@
 // RFC 5114 (Additional Diffie-Hellman Groups for Use with IETF Standards)
 // Section 2.3 (2048-bit MODP Group with 256-bit Prime Order Subgroup)
-let p = bigInt(("87A8E61D B4B6663C FFBBD19C 65195999 8CEEF608 660DD0F2" +
+let dhPrime = Codec.hex.encodeString(("87A8E61D B4B6663C FFBBD19C 65195999 8CEEF608 660DD0F2" +
   "5D2CEED4 435E3B00 E00DF8F1 D61957D4 FAF7DF45 61B2AA30" +
   "16C3D911 34096FAA 3BF4296D 830E9A7C 209E0C64 97517ABD" +
   "5A8A9D30 6BCF67ED 91F9E672 5B4758C0 22E0B1EF 4275BF7B" +
@@ -10,9 +10,9 @@ let p = bigInt(("87A8E61D B4B6663C FFBBD19C 65195999 8CEEF608 660DD0F2" +
   "67E144E5 14056425 1CCACB83 E6B486F6 B3CA3F79 71506026" +
   "C0B857F6 89962856 DED4010A BD0BE621 C3A3960A 54E710C3" +
   "75F26375 D7014103 A4B54330 C198AF12 6116D227 6E11715F" +
-  "693877FA D7EF09CA DB094AE9 1E1A1597").replace(/[^a-zA-Z0-9]/g, ''), 16);
+  "693877FA D7EF09CA DB094AE9 1E1A1597").replace(/[^a-zA-Z0-9]/g, ''));
 
-let g = bigInt(("3FB32C9B 73134D0B 2E775066 60EDBD48 4CA7B18F 21EF2054" +
+let dhGenerator = Codec.hex.encodeString(("3FB32C9B 73134D0B 2E775066 60EDBD48 4CA7B18F 21EF2054" +
   "07F4793A 1A0BA125 10DBC150 77BE463F FF4FED4A AC0BB555" +
   "BE3A6C1B 0C6B47B1 BC3773BF 7E8C6F62 901228F8 C28CBB18" +
   "A55AE313 41000A65 0196F931 C77A57F2 DDF463E5 E9EC144B" +
@@ -22,10 +22,10 @@ let g = bigInt(("3FB32C9B 73134D0B 2E775066 60EDBD48 4CA7B18F 21EF2054" +
   "C8484B1E 052588B9 B7D2BBD2 DF016199 ECD06E15 57CD0915" +
   "B3353BBB 64E0EC37 7FD02837 0DF92B52 C7891428 CDC67EB6" +
   "184B523D 1DB246C3 2F630784 90F00EF8 D647D148 D4795451" +
-  "5E2327CF EF98C582 664B4C0F 6CC41659").replace(/[^a-zA-Z0-9]/g, ''), 16);
+  "5E2327CF EF98C582 664B4C0F 6CC41659").replace(/[^a-zA-Z0-9]/g, ''));
 
 let Dispatcher = {
-  operations: ['modPow'],
+  operations: ['modPow', 'getEnabledCodecs', 'codecEncode', 'encodeString'],
   calls: {},
   callId: 0,
   init: function() {
@@ -53,10 +53,10 @@ let Dispatcher = {
       }
     }
   },
-  dispatch: function(event) {
+  dispatch: function(event, transfer) {
     let worker = this.workers[1].count < this.workers[0].count ? this.workers[1] : this.workers[0];
     event.id = this.callId++;
-    worker.worker.postMessage(event);
+    worker.worker.postMessage(event, transfer);
 
     let call = {worker: worker};
     this.calls[event.id] = call;
@@ -65,9 +65,156 @@ let Dispatcher = {
       call.reject = reject;
     });
   },
+  codecDecode: function(codec, buf) {
+    return this.dispatch({op: 'codecDecode', parameters: {codec, buf}}, [buf.buffer || buf]);
+  },
+  decodeBytes: function(buf, encoding) {
+    return this.dispatch({op: 'decodeBytes', parameters: {buf, encoding}}, [buf.buffer || buf]);
+  }
 };
 
 Dispatcher.init();
+
+function Crypter(state, update) {
+  let message = null;
+  let cryptKey = null;
+  let signKey = null;
+  let newState = null;
+
+  function updateCrypted() {
+    let currentMessage = message;
+    if (currentMessage != null && !currentMessage.cancelled && currentMessage.buffer && cryptKey != null) {
+      console.log('encrypting: ' + Codec.hex.decodeBytes(currentMessage.buffer));
+      encrypt(cryptKey, currentMessage.buffer).then(crypted=>{
+        if (!currentMessage.cancelled) {
+          console.log('encrypted: ' + Codec.hex.decodeBytes(crypted));
+          Dispatcher.codecDecode('base64', crypted).then(cryptedEncoded=>{
+            if (!currentMessage.cancelled) {
+              currentMessage.crypted = cryptedEncoded;
+              updateOutput();
+            }
+          })
+        }
+      }).catch(e=>{console.error(e)});
+    }
+  }
+
+  function updateSignature() {
+    let currentMessage = message;
+    if (currentMessage != null && !currentMessage.cancelled && currentMessage.buffer && signKey != null) {
+      sign(signKey, currentMessage.buffer, message.encoding).then(signature=>{
+        if (!currentMessage.cancelled) {
+          Dispatcher.codecDecode('base64', signature).then(encodedSignature=>{
+            if (!currentMessage.cancelled) {
+              currentMessage.signature = encodedSignature;
+              updateOutput();
+            }
+          })
+        }
+      });
+    }
+  }
+
+  function updateOutput() {
+    if (newState != null && message != null && !message.cancelled && message.crypted && message.signature) {
+      newState.message = message.crypted;
+      newState.signature = message.signature;
+      newState.encoding = message.encoding;
+      update(buildURL(newState));
+    }
+  }
+
+  generatePhase2Key(state).then(dhKey=>{
+    dhKey = dhKey.toBuffer();
+
+    buildCryptKey(dhKey).then(key=>{
+      cryptKey = key;
+      updateCrypted();
+    });
+
+    buildSignKey(dhKey).then(key=>{
+      signKey = key;
+      updateSignature();
+    });
+  });
+
+  generatePhase2Code(state).then(phase3State=>{
+    newState = phase3State;
+    updateOutput();
+  });
+
+  return {
+    cancel: function() {
+      if (message != null) {
+        message.cancelled = true;
+      }
+    },
+    update: function(newMessage) {
+      if (message != null) {
+        message.cancelled = true;
+      }
+
+      message = {
+        string: newMessage,
+        cancelled: false
+      }
+
+      let currentMessage = message;
+
+      Dispatcher.encodeString({string: currentMessage.string, allowCodecs: state.accept}).then(msg=>{
+        if (!currentMessage.cancelled) {
+          currentMessage.buffer = msg.buffer;
+          currentMessage.encoding = msg.encoding;
+
+          updateCrypted();
+          updateSignature();
+        }
+      });
+    }
+  }
+
+}
+
+function buildCryptKey(dhKey) {
+  return Promise.all([
+      sha256(dhKey.buffer.slice(0, 128)),
+      sha256(dhKey.buffer.slice(128, 192))
+    ]).then(values=>{
+      let [keyBuf, ivBuf] = values;
+      console.log('Key: ' + Codec.hex.decodeBytes(keyBuf) + ', iv: ' + Codec.hex.decodeBytes(ivBuf.slice(0, 16)))
+      return window.crypto.subtle.importKey('raw', keyBuf, {name: 'AES-CBC'}, false, ['encrypt', 'decrypt'])
+        .then(key=>{
+          return {key: key, iv: ivBuf.slice(0, 16)}
+        });
+    });
+}
+
+function buildSignKey(dhKey) {
+  return sha256(dhKey.buffer.slice(192, 256))
+    .then(keyBuf=>crypto.subtle.importKey('raw', keyBuf, {name: 'HMAC', hash: 'SHA-256'}, false, ['sign', 'verify']));
+}
+
+function encrypt(key, message) {
+  return window.crypto.subtle.encrypt({name: 'AES-CBC', iv: key.iv}, key.key, message);
+}
+
+function sign(key, message, encoding) {
+  let buf = new Uint8Array(message.length + encoding.length);
+  buf.set(Codec.ascii.encodeString(encoding));
+  buf.set(message, encoding.length);
+  return window.crypto.subtle.sign('HMAC', key, buf);
+}
+
+function decrypt(key, message) {
+  return window.crypto.subtle.decrypt({name: 'AES-CBC', iv: key.iv}, key.key, message);
+}
+
+function verify(key, message, encoding, signature) {
+  let buf = new Uint8Array(message.byteLength + encoding.length);
+  buf.set(Codec.ascii.encodeString(encoding));
+  buf.set(new Uint8Array(message), encoding.length);
+  return window.crypto.subtle.verify('HMAC', key, signature, buf);
+}
 
 function generateRandom(bits) {
   let array = new Uint8Array(bits >> 3);
@@ -75,8 +222,12 @@ function generateRandom(bits) {
   return array;
 }
 
-function sha256(int8Array) {
-  return window.crypto.subtle.digest('SHA-256', int8Array);
+function sha256(buf) {
+  return window.crypto.subtle.digest('SHA-256', buf);
+}
+
+function sha512(buf) {
+  return window.crypto.subtle.digest('SHA-512', buf);
 }
 
 function modPow(a, pow, mod) {
@@ -88,39 +239,53 @@ function modPow(a, pow, mod) {
 
 function generatePhase1() {
   let id = Codec.base64.decodeBytes(bigInt(parseInt(Date.now() / 1000)).toBuffer());
-  let secret = generateRandom(2048);
-  let secretStr = Codec.base64.decodeBytes(secret);
 
-  try {
-    localStorage.setItem(id, secretStr);
-  } catch (e) {
-    throw 'Unable to store to local storage';
-  }
+  return window.crypto.subtle.generateKey({name: 'ECDH', namedCurve: 'P-384'}, true, ['deriveBits'])
+    .then(key=>{
+      window.crypto.subtle.exportKey('jwk', key.privateKey)
+        .then(rawPrivateKey=>JSON.stringify(rawPrivateKey))
+        .then(base64PrivateKey=>{localStorage.setItem(id, base64PrivateKey)})
+        .catch(e=>{console.error('Unable to export private key: %o', e)});
 
-  return modPow(g, bigInt.fromBuffer(secret), p).then((code)=>{
-    return {
-      phase: 2,
-      id: id,
-      code: Codec.base64.decodeBytes(code.toBuffer())
-    };
-  });
+      return window.crypto.subtle.exportKey('raw', key.publicKey)
+        .then(rawPublicKey=>Dispatcher.codecDecode('base64', rawPublicKey))
+        .then(base64PublicKey=>{
+          return {
+            phase: 2,
+            id: id,
+            code: base64PublicKey
+          }
+        });
+    });
 }
 
 function generatePhase2Key(state) {
-  let secret = bigInt.fromBuffer(generateRandom(2048));
-  state.secret = secret;
-  return modPow(bigInt.fromBuffer(Codec.base64.encodeString(state.code)), secret, p);
+  return Promise.all([
+    window.crypto.subtle.generateKey({name: 'ECDH', namedCurve: 'P-384'}, true, ['deriveBits'])
+    .catch(e=>{console.error('Unable to generate public key %o', e)})
+    .then(key=>{
+      state.ecdhKey = key;
+      return window.crypto.subtle.exportKey('raw', key.publicKey).then(rawPublicKey=>Dispatcher.codecDecode('base64', rawPublicKey))
+    }).catch(e=>{console.error('Unable to export public key %o', e)}),
+    Dispatcher.codecEncode({codec: 'base64', string: state.code})
+    .then(bytes=>{
+      console.log('importing ' + Codec.hex.decodeBytes(bytes))
+      return window.crypto.subtle.importKey('raw', bytes, {name: 'ECDH', namedCurve: 'P-384'}, true, [])
+    }).catch(e=>{console.error('Failed to import public key: %o', e)})
+  ]).then(values=>{
+    state.code = values[0];
+    let publicKey = values[1];
+    state.phase = 3;
+    return window.crypto.subtle.deriveBits({name: 'ECDH', namedCurve: 'P-384', public: publicKey}, state.ecdhKey.privateKey, 384).catch(e=>{console.error('Failed to derive bits: %o', e)});
+  })
 }
 
-function generatePhase2Code(state) {
-  return modPow(g, state.secret, p).then((code)=>{
-    return {
-      phase: 3,
-      id: state.id,
-      code : Codec.base64.decodeBytes(code.toBuffer()),
-      encoding: state.encoding
-    }
-  });
+function deriveBits(buf, bits, salt) {
+  if (typeof salt == 'string') {
+    salt = Codec.base64.encodeString(salt);
+  }
+  return window.crypto.subtle.importKey('raw', buf, {name: 'HKDF'}, false, ['deriveBits'])
+    .then(key=>window.crypto.subtle.deriveBits({name: 'HKDF', hash: {name: 'SHA-512'}, info: new Uint8Array(), salt: salt.buffer || salt}, key, bits));
 }
 
 function generatePhase3Key(phase2) {
@@ -130,11 +295,13 @@ function generatePhase3Key(phase2) {
     throw 'Unable to find data from Step 1';
   }
 
-  localStorage.removeItem(phase2.id);
-  return modPow(
-          bigInt.fromBuffer(Codec.base64.encodeString(phase2.code)),
-          bigInt.fromBuffer(Codec.base64.encodeString(secret)),
-          p);
+  return Promise.all([
+    window.crypto.subtle.importKey('jwk', JSON.parse(secret), {name: 'ECDH', namedCurve: 'P-384'}, true, ['deriveBits']),
+    Dispatcher.codecEncode({codec: 'base64', string: phase2.code}).then(bytes=>window.crypto.subtle.importKey('raw', bytes, {name: 'ECDH', namedCurve: 'P-384'}, true, []))
+  ]).then(values=>{
+    let [privateKey, publicKey] = values;
+    return window.crypto.subtle.deriveBits({name: 'ECDH', namedCurve: 'P-384', public: publicKey}, privateKey, 384)
+  })
 }
 
 function buildURL(phase) {
@@ -151,6 +318,11 @@ function buildURL(phase) {
     url += '_e' + phase.encoding;
   }
 
+  if (phase.message) {
+    url += '_m' + phase.message;
+    url += '_s' + phase.signature;
+  }
+
   return url;
 }
 
@@ -158,7 +330,10 @@ let KEY_MAP = {
   p: 'phase',
   i: 'id',
   c: 'code',
-  e: 'encoding'
+  e: 'encoding',
+  m: 'message',
+  s: 'signature',
+  a: 'accept'
 }
 
 function parseHash() {
@@ -204,9 +379,34 @@ function copyBox(prefix, value, onReveal) {
   let copyLabel = el('.copy-button .copy-label');
 
 
-  copyText.value = value;
-  charcount.innerText = value.length;
-  covered.classList.remove('d-none');
+  function ready(value) {
+    copyText.value = value;
+    charcount.innerText = value.length;
+    covered.classList.remove('d-none');
+
+    cover.style.height = copyText.clientHeight + 1 + 'px';
+    cover.style.width = copyText.clientWidth + 'px';
+
+    if (copyText.style.scrollHeight < covered.clientHeight) {
+      covered.style.height = covered.clientHeight + 'px';
+    }
+
+    if (copyButton.tagName == 'A') {
+      copyButton.href = value;
+      copyButton.classList.remove('disabled');
+    } else {
+      copyButton.removeAttribute('disabled');
+    }
+
+    copyButton.classList.remove('btn-outline-success');
+    copyButton.classList.add('btn-success');
+
+    let copyIcon = el('.copy-button [data-fa-i2svg]');
+    copyIcon.classList.remove('fa-spin', 'fa-circle-notch');
+    copyIcon.classList.add('fa-clone');
+    copyLabel.innerText = 'Copy to Clipboard';
+    copyButton.style.width = copyButton.clientWidth + 'px';
+  }
 
   function clickReveal() {
     copyText.style.height = copyText.scrollHeight + 'px';
@@ -218,35 +418,13 @@ function copyBox(prefix, value, onReveal) {
 
   reveal.addEventListener('click', clickReveal);
 
-  cover.style.height = copyText.clientHeight + 1 + 'px';
-  cover.style.width = copyText.clientWidth + 'px';
-
-  if (copyText.style.scrollHeight < covered.clientHeight) {
-    covered.style.height = covered.clientHeight + 'px';
-  }
-
-
-  if (copyButton.tagName == 'A') {
-    copyButton.href = value;
-    copyButton.classList.remove('disabled');
-  } else {
-    copyButton.removeAttribute('disabled');
-  }
-
-  copyButton.classList.remove('btn-outline-success');
-  copyButton.classList.add('btn-success');
-
-  let copyIcon = el('.copy-button [data-fa-i2svg]');
-  copyIcon.classList.remove('fa-spin', 'fa-circle-notch');
-  copyIcon.classList.add('fa-clone');
-  copyLabel.innerText = 'Copy to Clipboard';
-  copyButton.style.width = copyButton.clientWidth + 'px';
-
   function clickCopy(e) {
     e.preventDefault();
     let range = document.createRange();
+    copyText.contentEditable = true;
     copyText.contenteditable = true;
     copyText.readonly = false;
+    copyText.select();
     range.selectNodeContents(copyText);
 
     let selection = window.getSelection();
@@ -268,6 +446,8 @@ function copyBox(prefix, value, onReveal) {
 
   copyButton.addEventListener('click', clickCopy);
 
+  ready(value);
+
   return {
     reset: function() {
       let copyIcon = el('.copy-button [data-fa-i2svg]');
@@ -286,13 +466,30 @@ function copyBox(prefix, value, onReveal) {
       copyIcon.classList.remove('fa-clone');
       copyIcon.classList.add('fa-spin', 'fa-circle-notch');
       copyLabel.innerText = 'Working...';
+      copyText.setAttribute('disabled', 'disabled');
     },
     update: function(value) {
-      copyText.value = value;
-      if (copyButton.tagName == 'A') {
-        copyButton.href = value;
-      }
-      charcount.innerText = value.length;
+      ready(value);
+    },
+    allowEditing: function(callback) {
+      copyText.value = '';
+      copyText.removeAttribute('disabled');
+      copyText.style.height = copyText.scrollHeight + 'px';
+      cover.classList.add('d-none');
+
+      let timeout;
+
+      copyText.addEventListener('keydown', function(e) {
+        copyText.style.height = '';
+        copyText.style.height = copyText.scrollHeight + 'px';
+        callback(copyText.value);
+      });
+
+      copyText.addEventListener('change', function(e) {
+        copyText.style.height = '';
+        copyText.style.height = copyText.scrollHeight + 'px';
+        callback(copyText.value);
+      });
     }
   }
 }
@@ -327,6 +524,9 @@ function reload() {
     } else if (state.phase == 2) {
       let keyBox;
       let urlBox;
+      let cancelled = false;
+
+      let crypter;
 
       if (!state.encoding) {
         state.encoding = Codec.password.name;
@@ -342,12 +542,43 @@ function reload() {
           }
         })
 
-        state.encoding = encoding;
-        if (urlBox) {
-          urlBox.update(buildURL(state));
-        }
+        if (encoding == 'm') {
+          cancelled = true;
+          if (urlBox) {
+            urlBox.reset();
+          }
 
-        keyBox.update(Codec.byName[state.encoding].decodeBytes(state.sha));
+          crypter = new Crypter(state, function(url) {
+            if (!urlBox) {
+              urlBox = copyBox(prefix + ' .url-box', url);
+            } else {
+              urlBox.update(url);
+            }
+          });
+
+          let timeout;
+
+          keyBox.allowEditing(msg=>{
+            if (urlBox) {
+              urlBox.reset();
+              urlBox = null;
+            }
+            crypter.cancel();
+            if (timeout) {
+              clearTimeout(timeout);
+            }
+            timeout = setTimeout(function() {
+              crypter.update(msg);
+            }, 2000);
+          });
+        } else {
+          state.encoding = encoding;
+          if (urlBox) {
+            urlBox.update(buildURL(state));
+          }
+
+          keyBox.update(Codec.byName[state.encoding].decodeBytes(state.sha));
+        }
       }
 
       document.querySelectorAll(prefix + ' .encoding-dropdown .dropdown-item').forEach(item=>{
@@ -361,11 +592,12 @@ function reload() {
       });
 
       function regenerate() {
-        let cancelled = false;
+
 
         generatePhase2Key(state)
-          .then(key=>sha256(key.toBuffer()))
+          .then(key=>deriveBits(key.slice(0, 32), 128, key.slice(32, 48)))
           .then(sha=>{
+            urlBox = copyBox(prefix + ' .url-box', buildURL(state));
             state.sha = sha;
             el('.encoding-dropdown').classList.remove('d-none');
             let key = Codec.byName[state.encoding].decodeBytes(sha);
@@ -389,25 +621,42 @@ function reload() {
               el('.regenerate').addEventListener('click', clickRegenerate);
             });
           });
-
-        generatePhase2Code(state).then(phase2=>{
-          if (!cancelled) {
-            phase2.encoding = state.encoding;
-            phase2.sha = state.sha;
-            state = phase2;
-            urlBox = copyBox(prefix + ' .url-box', buildURL(phase2));
-          }
-        });
       }
 
       regenerate();
     } else if (state.phase == 3) {
       generatePhase3Key(state)
-        .then(key=>sha256(key.toBuffer()))
-        .then(sha=>{
-          let key = Codec.byName[state.encoding].decodeBytes(sha);
-
-          copyBox(prefix, key)
+        .then(key=>{
+          if (state.message) {
+            Promise.all([
+              Promise.all([
+                Dispatcher.codecEncode({codec: 'base64', string: state.message}),
+                buildCryptKey(keyBuf)
+              ]).then(values=>{
+                let [message, cryptKey] = values;
+                console.log('encrypted: ' + Codec.hex.decodeBytes(message));
+                return decrypt(cryptKey, message)
+              }),
+              buildSignKey(keyBuf),
+              Dispatcher.codecEncode({codec: 'base64', string: state.signature})
+            ]).then(values=>{
+              let [decrypted, signKey, signature] = values;
+              console.log('decrypted: ' + Codec.hex.decodeBytes(decrypted))
+              verify(signKey, decrypted, state.encoding, signature).then(valid=>{
+                if (!valid) {
+                  console.error('signature verification failed!')
+                } else {
+                  Dispatcher.decodeBytes(decrypted, state.encoding).then(decoded=>{
+                    copyBox(prefix, decoded);
+                  })
+                }
+              })
+            })
+          } else {
+            deriveBits(key.slice(0, 32), 128, key.slice(32, 48)).then(sha=>{
+              copyBox(prefix, Codec.byName[state.encoding].decodeBytes(sha))
+            })
+          }
         });
     }
 

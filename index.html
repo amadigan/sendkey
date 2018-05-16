@@ -17,7 +17,7 @@
 
     <style>
     a.url {word-break: break-all;}
-    textarea {overflow: hidden;}
+    textarea[disabled] {overflow: hidden;}
     </style>
     <title>sendkey</title>
   </head>
@@ -44,7 +44,7 @@
           <div class="p-3 card d-none" id="phase2">
             <div class="card-body">
               <h2>Step 2 of 3</h2>
-              <p>Your new password:</p>
+              <p class="mb-1">Your new password:</p>
               <div class="key-box">
                 <button disabled class="text-left btn btn-outline-success copy-button"><i class="fas fa-circle-notch fa-spin"></i> <span class="copy-label">Working...</span></button>
                 <span class="dropdown encoding-dropdown d-none">
@@ -55,6 +55,7 @@
                     <a class="dropdown-item" data-encoding="B" href="">base64</a>
                     <a class="dropdown-item" data-encoding="x" href="">hex</a>
                     <a class="dropdown-item" data-encoding="p" href="">password</a>
+                    <!--<a class="dropdown-item" data-encoding="m" href="">message</a>-->
                   </div>
                 </span>
                 <button class="d-none btn btn-secondary regenerate"><i class="fas fa-sync"></i> Regenerate</button>
@@ -62,10 +63,10 @@
                   <div class="cover form-control" style="position: absolute; z-index: 2; background-color: rgba(238, 238, 238, 0.9);">
                     <button type="button" style="z-index: 3; margin: auto;" class="mx-auto d-block btn btn-info reveal"><i class="fas fa-eye"></i> Reveal (<span class="charcount"></span> characters)</button>
                   </div>
-                  <textarea disabled style="resize: none" class="text-dark bg-light hide form-control copy-text"></textarea>
+                  <textarea disabled placeholder="Enter your message here..." style="resize: none" class="text-dark bg-light hide form-control copy-text"></textarea>
                 </div>
               </div>
-              <p class="mt-2">Send this link back so the sender can see the password:</p>
+              <p class="mt-4 mb-1">Send this link back so the sender can see the password:</p>
               <div class="url-box">
                 <a href="" class="text-left btn btn-outline-success disabled copy-button"><i class="fas fa-circle-notch fa-spin"></i> <span class="copy-label">Working...</span></a>
                 <div class="mt-1 d-none covered">
@@ -127,7 +128,6 @@
             <a id="startOverButton" href="#" class="btn btn-primary disabled"><i class="fas fa-home"></i> Start Over</a>
             <a id="resetButton" href="#" class="btn btn-danger disabled" onclick="reset();"><i class="fas fa-bolt"></i> Clear Local Data</a>
           </div>
-
         </div>
       </div>
     </div>
