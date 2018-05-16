@@ -24,57 +24,6 @@ let dhGenerator = Codec.hex.encodeString(("3FB32C9B 73134D0B 2E775066 60EDBD48 4
   "184B523D 1DB246C3 2F630784 90F00EF8 D647D148 D4795451" +
   "5E2327CF EF98C582 664B4C0F 6CC41659").replace(/[^a-zA-Z0-9]/g, ''));
 
-let Dispatcher = {
-  operations: ['modPow', 'getEnabledCodecs', 'codecEncode', 'encodeString'],
-  calls: {},
-  callId: 0,
-  init: function() {
-    this.workers = [{worker: new Worker('worker.js'), count: 0}, {worker: new Worker('worker.js'), count: 0}];
-
-    let dispatcher = this;
-
-    function receive(event) {
-      let data = event.data;
-      let call = dispatcher.calls[data.id];
-      call.worker.count--;
-      call.resolve(data.returnValue);
-    }
-
-    for (let worker of this.workers) {
-      worker.worker.onmessage = receive;
-    }
-
-    for (let operation of this.operations) {
-      this[operation] = function(params) {
-        return dispatcher.dispatch({
-          op: operation,
-          parameters: params
-        })
-      }
-    }
-  },
-  dispatch: function(event, transfer) {
-    let worker = this.workers[1].count < this.workers[0].count ? this.workers[1] : this.workers[0];
-    event.id = this.callId++;
-    worker.worker.postMessage(event, transfer);
-
-    let call = {worker: worker};
-    this.calls[event.id] = call;
-    return new Promise((resolve, reject)=>{
-      call.resolve = resolve;
-      call.reject = reject;
-    });
-  },
-  codecDecode: function(codec, buf) {
-    return this.dispatch({op: 'codecDecode', parameters: {codec, buf}}, [buf.buffer || buf]);
-  },
-  decodeBytes: function(buf, encoding) {
-    return this.dispatch({op: 'decodeBytes', parameters: {buf, encoding}}, [buf.buffer || buf]);
-  }
-};
-
-Dispatcher.init();
-
 function Crypter(state, update) {
   let message = null;
   let cryptKey = null;
@@ -88,12 +37,7 @@ function Crypter(state, update) {
       encrypt(cryptKey, currentMessage.buffer).then(crypted=>{
         if (!currentMessage.cancelled) {
           console.log('encrypted: ' + Codec.hex.decodeBytes(crypted));
-          Dispatcher.codecDecode('base64', crypted).then(cryptedEncoded=>{
-            if (!currentMessage.cancelled) {
-              currentMessage.crypted = cryptedEncoded;
-              updateOutput();
-            }
-          })
+          currentMessage.crypted = base64.encode(crypted);
         }
       }).catch(e=>{console.error(e)});
     }
@@ -104,12 +48,7 @@ function Crypter(state, update) {
     if (currentMessage != null && !currentMessage.cancelled && currentMessage.buffer && signKey != null) {
       sign(signKey, currentMessage.buffer, message.encoding).then(signature=>{
         if (!currentMessage.cancelled) {
-          Dispatcher.codecDecode('base64', signature).then(encodedSignature=>{
-            if (!currentMessage.cancelled) {
-              currentMessage.signature = encodedSignature;
-              updateOutput();
-            }
-          })
+          currentMessage.signature = base64.encode(signature);
         }
       });
     }
@@ -161,15 +100,11 @@ function Crypter(state, update) {
 
       let currentMessage = message;
 
-      Dispatcher.encodeString({string: currentMessage.string, allowCodecs: state.accept}).then(msg=>{
-        if (!currentMessage.cancelled) {
-          currentMessage.buffer = msg.buffer;
-          currentMessage.encoding = msg.encoding;
-
-          updateCrypted();
-          updateSignature();
-        }
-      });
+      let msg = Codec.encodeString(currentMessage.string, state.accept);
+      currentMessage.buffer = msg.buffer;
+      currentMessage.encoding = msg.encoding;
+      updateCrypted();
+      updateSignature();
     }
   }
 
@@ -230,13 +165,6 @@ function sha512(buf) {
   return window.crypto.subtle.digest('SHA-512', buf);
 }
 
-function modPow(a, pow, mod) {
-  return Dispatcher.modPow({a, pow, mod}).then(rv=>{
-    bigInt.adopt(rv);
-    return rv;
-  });
-}
-
 function generatePhase1() {
   let id = Codec.base64.decodeBytes(bigInt(parseInt(Date.now() / 1000)).toBuffer());
 
@@ -248,7 +176,7 @@ function generatePhase1() {
         .catch(e=>{console.error('Unable to export private key: %o', e)});
 
       return window.crypto.subtle.exportKey('raw', key.publicKey)
-        .then(rawPublicKey=>Dispatcher.codecDecode('base64', rawPublicKey))
+        .then(rawPublicKey=>base64.encode(rawPublicKey))
         .then(base64PublicKey=>{
           return {
             phase: 2,
@@ -265,13 +193,9 @@ function generatePhase2Key(state) {
     .catch(e=>{console.error('Unable to generate public key %o', e)})
     .then(key=>{
       state.ecdhKey = key;
-      return window.crypto.subtle.exportKey('raw', key.publicKey).then(rawPublicKey=>Dispatcher.codecDecode('base64', rawPublicKey))
+      return window.crypto.subtle.exportKey('raw', key.publicKey).then(rawPublicKey=>base64.encode(rawPublicKey))
     }).catch(e=>{console.error('Unable to export public key %o', e)}),
-    Dispatcher.codecEncode({codec: 'base64', string: state.code})
-    .then(bytes=>{
-      console.log('importing ' + Codec.hex.decodeBytes(bytes))
-      return window.crypto.subtle.importKey('raw', bytes, {name: 'ECDH', namedCurve: 'P-384'}, true, [])
-    }).catch(e=>{console.error('Failed to import public key: %o', e)})
+    window.crypto.subtle.importKey('raw', base64.decode(state.code), {name: 'ECDH', namedCurve: 'P-384'}, true, [])
   ]).then(values=>{
     state.code = values[0];
     let publicKey = values[1];
@@ -297,7 +221,7 @@ function generatePhase3Key(phase2) {
 
   return Promise.all([
     window.crypto.subtle.importKey('jwk', JSON.parse(secret), {name: 'ECDH', namedCurve: 'P-384'}, true, ['deriveBits']),
-    Dispatcher.codecEncode({codec: 'base64', string: phase2.code}).then(bytes=>window.crypto.subtle.importKey('raw', bytes, {name: 'ECDH', namedCurve: 'P-384'}, true, []))
+    window.crypto.subtle.importKey('raw', base64.decode(phase2.code), {name: 'ECDH', namedCurve: 'P-384'}, true, [])
   ]).then(values=>{
     let [privateKey, publicKey] = values;
     return window.crypto.subtle.deriveBits({name: 'ECDH', namedCurve: 'P-384', public: publicKey}, privateKey, 384)
@@ -366,6 +290,14 @@ function reset() {
   location.reload();
 }
 
+function waitFor(selector, cb) {
+  if (selector()) {
+    cb();
+  } else {
+    setTimeout(()=>waitFor(selector, cb), 100);
+  }
+}
+
 function copyBox(prefix, value, onReveal) {
   function el(selector) {
     return document.querySelector(prefix + ' ' + selector);
@@ -426,6 +358,7 @@ function copyBox(prefix, value, onReveal) {
     copyText.readonly = false;
     copyText.select();
     range.selectNodeContents(copyText);
+    range.selectNode(copyText);
 
     let selection = window.getSelection();
     selection.removeAllRanges();
@@ -446,7 +379,8 @@ function copyBox(prefix, value, onReveal) {
 
   copyButton.addEventListener('click', clickCopy);
 
-  ready(value);
+
+  waitFor(()=>el('.copy-button [data-fa-i2svg]'), ()=>ready(value));
 
   return {
     reset: function() {
@@ -629,26 +563,16 @@ function reload() {
         .then(key=>{
           if (state.message) {
             Promise.all([
-              Promise.all([
-                Dispatcher.codecEncode({codec: 'base64', string: state.message}),
-                buildCryptKey(keyBuf)
-              ]).then(values=>{
-                let [message, cryptKey] = values;
-                console.log('encrypted: ' + Codec.hex.decodeBytes(message));
-                return decrypt(cryptKey, message)
-              }),
-              buildSignKey(keyBuf),
-              Dispatcher.codecEncode({codec: 'base64', string: state.signature})
+              buildCryptKey(keyBuf).then(cryptKey=>decrypt(cryptKey, base64.deocde(state.message))),
+              buildSignKey(keyBuf)
             ]).then(values=>{
-              let [decrypted, signKey, signature] = values;
-              console.log('decrypted: ' + Codec.hex.decodeBytes(decrypted))
+              let [decrypted, signKey] = values;
+              let signature = base64.decode(state.signature);
               verify(signKey, decrypted, state.encoding, signature).then(valid=>{
                 if (!valid) {
                   console.error('signature verification failed!')
                 } else {
-                  Dispatcher.decodeBytes(decrypted, state.encoding).then(decoded=>{
-                    copyBox(prefix, decoded);
-                  })
+                  copyBox(prefix, Codec.decodeBytes(encrypted, state.encoding))
                 }
               })
             })
